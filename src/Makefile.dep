@@ -1,0 +1,10 @@
+ae.o: ae.c ae.h rbtree.h zmalloc.h config.h ae_epoll.c
+ae_epoll.o: ae_epoll.c
+ae_evport.o: ae_evport.c
+ae_kqueue.o: ae_kqueue.c
+ae_select.o: ae_select.c
+anet.o: anet.c fmacros.h anet.h
+example.o: example.c ae.h rbtree.h anet.h zmalloc.h
+rb_test.o: rb_test.c rbtree.h
+rbtree.o: rbtree.c rbtree.h
+zmalloc.o: zmalloc.c config.h zmalloc.h
