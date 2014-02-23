@@ -94,18 +94,36 @@ static inline struct page * rb_insert_page_cache(struct inode * inode,
 #ifndef	_LINUX_RBTREE_H
 #define	_LINUX_RBTREE_H
 
-#include <linux/kernel.h>
-#include <linux/stddef.h>
+#include <stdlib.h>
+
+/* add inline support for visual c++ */
+#ifdef WIN32
+#define inline __inline
+#endif
+
+/**
+* container_of - cast a member of a structure out to the containing structure
+* @ptr: the pointer to the member.
+* @type: the type of the container struct this is embedded in.
+* @member: the name of the member within the struct.
+*
+*/
+#ifndef container_of
+#define container_of(ptr, type, member) ((type *)( \
+	(char *)(ptr) - \
+	((size_t) &((type *)0)->member)))
+#endif
+
+#define	RB_RED		0
+#define	RB_BLACK	1
 
 struct rb_node
 {
-	unsigned long  rb_parent_color;
-#define	RB_RED		0
-#define	RB_BLACK	1
+	struct rb_node *parent;
 	struct rb_node *rb_right;
 	struct rb_node *rb_left;
-} __attribute__((aligned(sizeof(long))));
-    /* The alignment might seem pointless, but allegedly CRIS needs it */
+	unsigned char color;
+};
 
 struct rb_root
 {
@@ -113,20 +131,21 @@ struct rb_root
 };
 
 
-#define rb_parent(r)   ((struct rb_node *)((r)->rb_parent_color & ~3))
-#define rb_color(r)   ((r)->rb_parent_color & 1)
-#define rb_is_red(r)   (!rb_color(r))
+#define rb_parent(r)   ((r)->parent)
+#define rb_color(r)   ((r)->color)
+#define rb_is_red(r)   (!(r)->color)
 #define rb_is_black(r) rb_color(r)
-#define rb_set_red(r)  do { (r)->rb_parent_color &= ~1; } while (0)
-#define rb_set_black(r)  do { (r)->rb_parent_color |= 1; } while (0)
+#define rb_set_red(r)  do { (r)->color = RB_RED; } while (0)
+#define rb_set_black(r)  do { (r)->color = RB_BLACK; } while (0)
 
 static inline void rb_set_parent(struct rb_node *rb, struct rb_node *p)
 {
-	rb->rb_parent_color = (rb->rb_parent_color & 3) | (unsigned long)p;
+	rb->parent = p;
 }
+
 static inline void rb_set_color(struct rb_node *rb, int color)
 {
-	rb->rb_parent_color = (rb->rb_parent_color & ~1) | color;
+	rb->color = color;
 }
 
 #define RB_ROOT	(struct rb_root) { NULL, }
@@ -160,7 +179,8 @@ extern void rb_replace_node(struct rb_node *victim, struct rb_node *new,
 static inline void rb_link_node(struct rb_node * node, struct rb_node * parent,
 				struct rb_node ** rb_link)
 {
-	node->rb_parent_color = (unsigned long )parent;
+	rb_set_parent(node, parent);
+	node->color = RB_RED;
 	node->rb_left = node->rb_right = NULL;
 
 	*rb_link = node;
