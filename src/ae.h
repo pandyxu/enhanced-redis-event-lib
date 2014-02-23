@@ -32,6 +32,7 @@
 
 #ifndef __AE_H__
 #define __AE_H__
+#include "rbtree.h"
 
 #define AE_OK 0
 #define AE_ERR -1
@@ -74,7 +75,7 @@ typedef struct aeTimeEvent {
     aeTimeProc *timeProc;
     aeEventFinalizerProc *finalizerProc;
     void *clientData;
-    struct aeTimeEvent *next;
+    struct rb_node rb_node;
 } aeTimeEvent;
 
 /* A fired event */
@@ -91,7 +92,7 @@ typedef struct aeEventLoop {
     time_t lastTime;     /* Used to detect system clock skew */
     aeFileEvent *events; /* Registered events */
     aeFiredEvent *fired; /* Fired events */
-    aeTimeEvent *timeEventHead;
+    struct rb_root *timeEventRbtreeRoot;
     int stop;
     void *apidata; /* This is used for polling API specific data */
     aeBeforeSleepProc *beforesleep;

@@ -70,7 +70,9 @@ aeEventLoop *aeCreateEventLoop(int setsize) {
     if (eventLoop->events == NULL || eventLoop->fired == NULL) goto err;
     eventLoop->setsize = setsize;
     eventLoop->lastTime = time(NULL);
-    eventLoop->timeEventHead = NULL;
+
+    eventLoop->timeEventRbtreeRoot = zmalloc(sizeof(struct rb_root));
+    if (eventLoop->timeEventRbtreeRoot == NULL) goto err;
     eventLoop->timeEventNextId = 0;
     eventLoop->stop = 0;
     eventLoop->maxfd = -1;
@@ -121,7 +123,35 @@ int aeResizeSetSize(aeEventLoop *eventLoop, int setsize) {
     return AE_OK;
 }
 
+static void freeTimeEvent(aeEventLoop *eventLoop, aeTimeEvent *te)
+{
+    if (te->finalizerProc)
+        te->finalizerProc(eventLoop, te->clientData);
+    zfree(te);
+}
+
+/* clear all the time event */
+static void aeClearTimeEvent(aeEventLoop *eventLoop)
+{
+    struct rb_node *pre_node, *node;
+    struct aeTimeEvent *timeEvent;
+
+    node = rb_first(eventLoop->timeEventRbtreeRoot);
+    while (node)
+    {
+        pre_node = node;
+        node = rb_next(node);
+
+        rb_erase(pre_node, eventLoop->timeEventRbtreeRoot);
+        timeEvent = container_of(pre_node, struct aeTimeEvent, rb_node);
+        freeTimeEvent(eventLoop, timeEvent);
+    }
+}
+
 void aeDeleteEventLoop(aeEventLoop *eventLoop) {
+    aeClearTimeEvent(eventLoop);
+    zfree(eventLoop->timeEventRbtreeRoot);
+
     aeApiFree(eventLoop);
     zfree(eventLoop->events);
     zfree(eventLoop->fired);
@@ -200,6 +230,29 @@ static void aeAddMillisecondsToNow(long long milliseconds, long *sec, long *ms) 
     *ms = when_ms;
 }
 
+static void aeInsertTimeEvent(struct rb_root *root, struct aeTimeEvent *data)
+{
+    struct rb_node **new_node = &(root->rb_node), *parent = NULL;
+
+    /* Figure out where to put new node */
+    while (*new_node) {
+        struct aeTimeEvent *this_node = container_of(*new_node, struct aeTimeEvent, rb_node);
+
+        parent = *new_node;
+
+        if (data->when_sec < this_node->when_sec
+            || (data->when_sec == this_node->when_sec
+                && data->when_ms < this_node->when_ms))
+            new_node = &((*new_node)->rb_left);
+        else
+            new_node = &((*new_node)->rb_right);
+    }
+
+    /* Add new node and rebalance tree. */
+    rb_link_node(&data->rb_node, parent, new_node);
+    rb_insert_color(&data->rb_node, root);
+}
+
 long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
         aeTimeProc *proc, void *clientData,
         aeEventFinalizerProc *finalizerProc)
@@ -214,29 +267,27 @@ long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
     te->timeProc = proc;
     te->finalizerProc = finalizerProc;
     te->clientData = clientData;
-    te->next = eventLoop->timeEventHead;
-    eventLoop->timeEventHead = te;
+    aeInsertTimeEvent(eventLoop->timeEventRbtreeRoot, te);
     return id;
 }
 
 int aeDeleteTimeEvent(aeEventLoop *eventLoop, long long id)
 {
-    aeTimeEvent *te, *prev = NULL;
+    struct rb_node *pre_node, *node;
+    struct aeTimeEvent *te;
 
-    te = eventLoop->timeEventHead;
-    while(te) {
-        if (te->id == id) {
-            if (prev == NULL)
-                eventLoop->timeEventHead = te->next;
-            else
-                prev->next = te->next;
-            if (te->finalizerProc)
-                te->finalizerProc(eventLoop, te->clientData);
-            zfree(te);
+    node = rb_first(eventLoop->timeEventRbtreeRoot);
+    while (node)
+    {
+        pre_node = node;
+        node = rb_next(node);
+        te = container_of(pre_node, struct aeTimeEvent, rb_node);
+        if (te->id == id)
+        {
+            rb_erase(pre_node, eventLoop->timeEventRbtreeRoot);
+            freeTimeEvent(eventLoop, te);
             return AE_OK;
         }
-        prev = te;
-        te = te->next;
     }
     return AE_ERR; /* NO event with the specified ID found */
 }
@@ -254,25 +305,22 @@ int aeDeleteTimeEvent(aeEventLoop *eventLoop, long long id)
  */
 static aeTimeEvent *aeSearchNearestTimer(aeEventLoop *eventLoop)
 {
-    aeTimeEvent *te = eventLoop->timeEventHead;
-    aeTimeEvent *nearest = NULL;
-
-    while(te) {
-        if (!nearest || te->when_sec < nearest->when_sec ||
-                (te->when_sec == nearest->when_sec &&
-                 te->when_ms < nearest->when_ms))
-            nearest = te;
-        te = te->next;
+    struct rb_node *node = rb_first(eventLoop->timeEventRbtreeRoot);
+    if (!node)
+    {
+        return NULL;
     }
-    return nearest;
+    return container_of(node, struct aeTimeEvent, rb_node);
 }
 
 /* Process time events */
 static int processTimeEvents(aeEventLoop *eventLoop) {
     int processed = 0;
     aeTimeEvent *te;
-    long long maxId;
     time_t now = time(NULL);
+
+    struct rb_node *pre_node;
+    struct rb_node *node;
 
     /* If the system clock is moved to the future, and then set back to the
      * right value, time events may be delayed in a random way. Often this
@@ -283,54 +331,40 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
      * processing events earlier is less dangerous than delaying them
      * indefinitely, and practice suggests it is. */
     if (now < eventLoop->lastTime) {
-        te = eventLoop->timeEventHead;
-        while(te) {
-            te->when_sec = 0;
-            te = te->next;
+        for (node = rb_first(eventLoop->timeEventRbtreeRoot); node; node = rb_next(node))
+        {
+            rb_entry(node, struct aeTimeEvent, rb_node)->when_sec = 0;
         }
     }
     eventLoop->lastTime = now;
 
-    te = eventLoop->timeEventHead;
-    maxId = eventLoop->timeEventNextId-1;
-    while(te) {
+    for(;;)
+    {
         long now_sec, now_ms;
-        long long id;
+        node = rb_first(eventLoop->timeEventRbtreeRoot);
 
-        if (te->id > maxId) {
-            te = te->next;
-            continue;
+        if (!node)
+        {
+            break;
         }
+
+        te = container_of(node, struct aeTimeEvent, rb_node);
         aeGetTime(&now_sec, &now_ms);
         if (now_sec > te->when_sec ||
             (now_sec == te->when_sec && now_ms >= te->when_ms))
         {
             int retval;
+            retval = te->timeProc(eventLoop, te->id, te->clientData);
 
-            id = te->id;
-            retval = te->timeProc(eventLoop, id, te->clientData);
-            processed++;
-            /* After an event is processed our time event list may
-             * no longer be the same, so we restart from head.
-             * Still we make sure to don't process events registered
-             * by event handlers itself in order to don't loop forever.
-             * To do so we saved the max ID we want to handle.
-             *
-             * FUTURE OPTIMIZATIONS:
-             * Note that this is NOT great algorithmically. Redis uses
-             * a single time event so it's not a problem but the right
-             * way to do this is to add the new elements on head, and
-             * to flag deleted elements in a special way for later
-             * deletion (putting references to the nodes to delete into
-             * another linked list). */
+            rb_erase(node, eventLoop->timeEventRbtreeRoot);
             if (retval != AE_NOMORE) {
                 aeAddMillisecondsToNow(retval,&te->when_sec,&te->when_ms);
+                aeInsertTimeEvent(eventLoop->timeEventRbtreeRoot, te);
             } else {
-                aeDeleteTimeEvent(eventLoop, id);
+                freeTimeEvent(eventLoop, te);
             }
-            te = eventLoop->timeEventHead;
         } else {
-            te = te->next;
+            break;
         }
     }
     return processed;
