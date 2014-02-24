@@ -1,4 +1,4 @@
-/* A simple http server example using RDS-EVENT-LIB, just echo the server's time to client.
+/* A simple http server example using enhanced-redis-event-lib, just echo the server's time to client.
  *
  * Copyright (c) 2014, pandyxu <pandyxu at outlook dot com>
  * All rights reserved.
@@ -99,9 +99,8 @@ void tWriteProc(struct aeEventLoop* eventLoop, int fd, void* clientData, int mas
 
     snprintf(contentBuf,
         sizeof(contentBuf),
-        "<html>Hello, rds-event-lib(redis event library) test.<br /><br />%s</html>",
-        server.backgroundBuf
-        );
+        "<html>Hello, <a href=\"https://github.com/pandyxu/enhanced-redis-event-lib\">enhanced-redis-event-lib</a> example.<br /><br />%s</html>",
+        server.backgroundBuf);
 
     snprintf(pageBuf, sizeof(pageBuf),
         "HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n%s",
@@ -189,6 +188,14 @@ void tReadProc(struct aeEventLoop* eventLoop, int fd, void* clientData, int mask
     if (NULL == http_head_tail_pos)
     {
         /* continue read when next file event */
+        return;
+    }
+
+    /* stop the server */
+    if (0 == strcmp("enhanced-redis-event-lib_stop\r\n\r\n", c->readBuf))
+    {
+        DBGLOG("Received \"enhanced-redis-event-lib_stop\\r\\n\\r\\n\" request, will stop the server.");
+        aeStop(eventLoop);
         return;
     }
 
@@ -299,4 +306,3 @@ int main(int argc, char** argv) {
     aeDeleteEventLoop(eventLoop);
     return 0;
 }
-

@@ -133,18 +133,16 @@ static void freeTimeEvent(aeEventLoop *eventLoop, aeTimeEvent *te)
 /* clear all the time event */
 static void aeClearTimeEvent(aeEventLoop *eventLoop)
 {
-    struct rb_node *pre_node, *node;
-    struct aeTimeEvent *timeEvent;
+    struct rb_node *current_node = NULL;
+    struct rb_node *next_node = rb_first(eventLoop->timeEventRbtreeRoot);
 
-    node = rb_first(eventLoop->timeEventRbtreeRoot);
-    while (node)
+    while (next_node)
     {
-        pre_node = node;
-        node = rb_next(node);
+        current_node = next_node;
+        next_node = rb_next(next_node);
 
-        rb_erase(pre_node, eventLoop->timeEventRbtreeRoot);
-        timeEvent = container_of(pre_node, struct aeTimeEvent, rb_node);
-        freeTimeEvent(eventLoop, timeEvent);
+        rb_erase(current_node, eventLoop->timeEventRbtreeRoot);
+        freeTimeEvent(eventLoop, container_of(current_node, struct aeTimeEvent, rb_node));
     }
 }
 
@@ -273,18 +271,18 @@ long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
 
 int aeDeleteTimeEvent(aeEventLoop *eventLoop, long long id)
 {
-    struct rb_node *pre_node, *node;
+    struct rb_node *current_node = NULL;
+    struct rb_node *next_node = rb_first(eventLoop->timeEventRbtreeRoot);
     struct aeTimeEvent *te;
 
-    node = rb_first(eventLoop->timeEventRbtreeRoot);
-    while (node)
+    while (next_node)
     {
-        pre_node = node;
-        node = rb_next(node);
-        te = container_of(pre_node, struct aeTimeEvent, rb_node);
+        current_node = next_node;
+        next_node = rb_next(next_node);
+        te = container_of(current_node, struct aeTimeEvent, rb_node);
         if (te->id == id)
         {
-            rb_erase(pre_node, eventLoop->timeEventRbtreeRoot);
+            rb_erase(current_node, eventLoop->timeEventRbtreeRoot);
             freeTimeEvent(eventLoop, te);
             return AE_OK;
         }
@@ -318,8 +316,6 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
     int processed = 0;
     aeTimeEvent *te;
     time_t now = time(NULL);
-
-    struct rb_node *pre_node;
     struct rb_node *node;
 
     /* If the system clock is moved to the future, and then set back to the

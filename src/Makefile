@@ -1,7 +1,6 @@
 CC = gcc
 CFLAGS = -std=c99 -g -I.
 TARGET = ../example
-#SRCDIRS = .
 
 OBJS = ae.o example.o zmalloc.o anet.o rbtree.o
 
@@ -21,3 +20,5 @@ rb_test: dep rbtree.o rb_test.o
 
 clean:
 	rm -f $(OBJS) $(TARGET)
+	rm -f rb_test.o rb_test
+.PHONY: clean

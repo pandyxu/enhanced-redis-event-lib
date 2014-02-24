@@ -97,7 +97,7 @@ void my_rb_delete(struct rb_root *root, int key)
 }
 
 
-void print_rbtree(struct rb_root *tree)
+void my_rbtree_print(struct rb_root *tree)
 {
 	struct rb_node *node;
 	int is_empty_tree = TRUE;
@@ -120,40 +120,38 @@ void print_rbtree(struct rb_root *tree)
 /* clear the whole rbtree */
 void my_rbtree_clear(struct rb_root *tree)
 {
-	struct rb_node *pre_node, *node;
+	struct rb_node *current_node = NULL;
+	struct rb_node *next_node = rb_first(tree);
 	struct user_def_type *data;
 
-	node = rb_first(tree);
-	while (node)
+	while (next_node)
 	{
-		pre_node = node;
-		node = rb_next(node);
+		current_node = next_node;
+		next_node = rb_next(next_node);
 
-		rb_erase(pre_node, tree);
-		data = container_of(pre_node, struct user_def_type, rb_node);
-		/* printf("free key: %d\n", data->key); */
-		free(data);
+		rb_erase(current_node, tree);
+		free(container_of(current_node, struct user_def_type, rb_node));
 	}
 }
 
 
-void rbtree_handle_and_del(struct rb_root *tree)
+void my_rbtree_clear_and_print(struct rb_root *tree)
 {
-	struct rb_node *pre_node, *node;
+	struct rb_node *current_node = NULL;
+	struct rb_node *next_node = rb_first(tree);
 	struct user_def_type *data;
 
-	node = rb_first(tree);
-	while (node)
+	while (next_node)
 	{
-		pre_node = node;
-		node = rb_next(node);
+		current_node = next_node;
+		next_node = rb_next(next_node);
 
-		printf("Handle and delete key: %d\n", rb_entry(pre_node, struct user_def_type, rb_node)->key);
-		rb_erase(pre_node, tree);
-		data = container_of(pre_node, struct user_def_type, rb_node);
+		rb_erase(current_node, tree);
+		data = container_of(current_node, struct user_def_type, rb_node);
+		printf("Free user_def_type, key: %d\n", data->key);
 		free(data);
 
-		print_rbtree(tree);
+		my_rbtree_print(tree);
 	}
 	printf("\n");
 }
@@ -186,17 +184,18 @@ int main(int argc, char** argv)
 	struct rb_root my_rb_tree;
 	my_rb_tree.rb_node = NULL;
 
-	/* rbtree_handle_and_del test */
+	printf("my_rbtree_clear test:\n");
 	init_rbtree_test_data(&my_rb_tree);
-	print_rbtree(&my_rb_tree);
-	printf("\n\n");
-	rbtree_handle_and_del(&my_rb_tree);
-
-	/* clear tree test */
-	init_rbtree_test_data(&my_rb_tree);
-	print_rbtree(&my_rb_tree);
+	my_rbtree_print(&my_rb_tree);
 	my_rbtree_clear(&my_rb_tree);
-	print_rbtree(&my_rb_tree);
+	my_rbtree_print(&my_rb_tree);
+	printf("\n\n");
+
+	printf("my_rbtree_clear_and_print test:\n");
+	init_rbtree_test_data(&my_rb_tree);
+	my_rbtree_print(&my_rb_tree);
+	my_rbtree_clear_and_print(&my_rb_tree);
+	my_rbtree_print(&my_rb_tree);
 
 	return 0;
 }
