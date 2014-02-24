@@ -251,7 +251,7 @@ int tBackgroundTask(struct aeEventLoop* eventLoop, long long id, void* clientDat
     struct tm *t_now;
     time(&t_tmp);
     t_now = localtime(&t_tmp);
-    return snprintf(server.backgroundBuf, sizeof(server.backgroundBuf),
+    snprintf(server.backgroundBuf, sizeof(server.backgroundBuf),
         "Current server time: %4.4d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d",
         t_now->tm_year + 1900,
         t_now->tm_mon + 1,
@@ -260,6 +260,11 @@ int tBackgroundTask(struct aeEventLoop* eventLoop, long long id, void* clientDat
         t_now->tm_min,
         t_now->tm_sec);
     return 1000/server.hz;
+}
+
+int tEchoTask(struct aeEventLoop* eventLoop, long long id, void* clientData) {
+    snprintf(server.backgroundBuf, sizeof(server.backgroundBuf), "EchoTask");
+    return 2000/server.hz;
 }
 
 void tEventFinalizerProc(struct aeEventLoop* eventLoop, void* clientData) {
@@ -283,6 +288,32 @@ void initServer(void) {
     server.hz = 10;
 }
 
+void initTimeEvent(struct aeEventLoop* eventLoop) {
+    struct time_ev_priv_data* background_time_ev_data = zmalloc(sizeof(struct time_ev_priv_data));
+    if (NULL == background_time_ev_data)
+    {
+        ERRLOG("memory is not enough.");
+        exit(1);
+    }
+    background_time_ev_data->id = 0;
+    if (aeCreateTimeEvent(eventLoop, 1, tBackgroundTask, background_time_ev_data, tEventFinalizerProc) == AE_ERR) {
+        ERRLOG("Can't create the tBackgroundTask time event.");
+        exit(1);
+    }
+
+    struct time_ev_priv_data* echo_task_data = zmalloc(sizeof(struct time_ev_priv_data));
+    if (NULL == echo_task_data)
+    {
+        ERRLOG("memory is not enough.");
+        exit(1);
+    }
+    echo_task_data->id = 1;
+    if (aeCreateTimeEvent(eventLoop, 1, tEchoTask, echo_task_data, tEventFinalizerProc) == AE_ERR) {
+        ERRLOG("Can't create the tEchoTask time event.");
+        exit(1);
+    }
+}
+
 int main(int argc, char** argv) {
     signal(SIGABRT, &sighandler);
     signal(SIGTERM, &sighandler);
@@ -303,19 +334,7 @@ int main(int argc, char** argv) {
     }
 
     aeSetBeforeSleepProc(eventLoop, tBeforeSleepProc);
-
-    struct time_ev_priv_data* background_time_ev_data = zmalloc(sizeof(struct time_ev_priv_data));
-    if (NULL == background_time_ev_data)
-    {
-        ERRLOG("memory is not enough.");
-        exit(1);
-    }
-    background_time_ev_data->id = 0;
-    if (aeCreateTimeEvent(eventLoop, 1, tBackgroundTask, background_time_ev_data, tEventFinalizerProc) == AE_ERR) {
-        ERRLOG("Can't create the serverCron time event.");
-        exit(1);
-    }
-
+    initTimeEvent(eventLoop);
     aeMain(eventLoop);
     aeDeleteEventLoop(eventLoop);
     return 0;
