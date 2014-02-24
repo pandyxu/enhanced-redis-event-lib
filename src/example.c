@@ -52,6 +52,10 @@ struct web_server {
     char backgroundBuf[64];
 };
 
+struct time_ev_priv_data {
+    int id;
+};
+
 static struct web_server server;
 
 typedef struct client_data_s {
@@ -259,7 +263,9 @@ int tBackgroundTask(struct aeEventLoop* eventLoop, long long id, void* clientDat
 }
 
 void tEventFinalizerProc(struct aeEventLoop* eventLoop, void* clientData) {
-    // DBGLOG("aeEventFinalizerProc.");
+    struct time_ev_priv_data* time_ev_data = (struct time_ev_priv_data*)clientData;
+    DBGLOG("Time event finalizer proc, time event id: %d", time_ev_data->id);
+    zfree(time_ev_data);
 }
 
 void tBeforeSleepProc(struct aeEventLoop* eventLoop) {
@@ -297,7 +303,15 @@ int main(int argc, char** argv) {
     }
 
     aeSetBeforeSleepProc(eventLoop, tBeforeSleepProc);
-    if (aeCreateTimeEvent(eventLoop, 1, tBackgroundTask, NULL, NULL) == AE_ERR) {
+
+    struct time_ev_priv_data* background_time_ev_data = zmalloc(sizeof(struct time_ev_priv_data));
+    if (NULL == background_time_ev_data)
+    {
+        ERRLOG("memory is not enough.");
+        exit(1);
+    }
+    background_time_ev_data->id = 0;
+    if (aeCreateTimeEvent(eventLoop, 1, tBackgroundTask, background_time_ev_data, tEventFinalizerProc) == AE_ERR) {
         ERRLOG("Can't create the serverCron time event.");
         exit(1);
     }
