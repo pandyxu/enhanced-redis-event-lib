@@ -330,6 +330,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
         for (node = rb_first(eventLoop->timeEventRbtreeRoot); node; node = rb_next(node))
         {
             rb_entry(node, struct aeTimeEvent, rb_node)->when_sec = 0;
+            rb_entry(node, struct aeTimeEvent, rb_node)->when_ms = 0;
         }
     }
     eventLoop->lastTime = now;
